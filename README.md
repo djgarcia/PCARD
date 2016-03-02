@@ -16,7 +16,40 @@ We have created an oversampling version of this dataset with 65 million instance
 * We outperform the original proposal and Random Forest implementation in MLlib for all datasets.
 * For epsilon dataset, we have outperformed the results of Random Forest by 5% less error with just 10 trees, compared to a Random Forest with up to 500 trees.
 
-## Example
+
+## Example (ml)
+
+```scala
+import org.apache.spark.ml.classification._
+
+val nTrees = 10
+val nBins = 5
+
+val labelIndexer = new StringIndexer()
+      .setInputCol("label")
+      .setOutputCol("indexedLabel")
+      .fit(trainingData)
+
+val pcard = new PCARDClassifier()
+      .setLabelCol("indexedLabel")
+      .setFeaturesCol("features")
+      .setTrees(nTrees)
+      .setCuts(nBins)
+
+val labelConverter = new IndexToString()
+      .setInputCol("prediction")
+      .setOutputCol("predictedLabel")
+      .setLabels(labelIndexer.labels)
+
+val pipeline = new Pipeline()
+      .setStages(Array(labelIndexer, pcard, labelConverter))
+
+val model = pipeline.fit(trainingData)
+
+val predictions = model.transform(testData)
+```
+
+## Example (MLlib)
 
 
 ```scala

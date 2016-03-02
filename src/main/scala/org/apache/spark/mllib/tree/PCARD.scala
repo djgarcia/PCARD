@@ -1,12 +1,12 @@
 package org.apache.spark.mllib.tree
 
+import org.apache.spark.ml.classification.DecisionTreeClassifier
 import org.apache.spark.ml.{Pipeline, PipelineModel}
 import org.apache.spark.mllib.feature.{PCA, PCAModel}
 import org.apache.spark.rdd._
 import org.apache.spark.mllib.regression.LabeledPoint
 import org.apache.spark.mllib.linalg._
 import org.apache.spark.ml.feature.StringIndexer
-import org.apache.spark.ml.classification._
 import scala.util.Random
 
 class PCARD private (val data: RDD[LabeledPoint], val nTrees: Int, val cuts: Int) extends Serializable{

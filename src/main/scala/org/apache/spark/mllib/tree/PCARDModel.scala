@@ -1,5 +1,6 @@
 package org.apache.spark.mllib.tree
 
+import org.apache.spark.SparkContext
 import org.apache.spark.ml.PipelineModel
 import org.apache.spark.mllib.feature.PCAModel
 import org.apache.spark.mllib.linalg.{Vector, Vectors}
@@ -22,7 +23,13 @@ class PCARDModel(val nTrees: Int, val disc: Array[Array[Array[Double]]], val pca
     }
   }
 
-  def test(test: RDD[LabeledPoint]): Array[Double] ={
+  def getTrees: Int = nTrees
+  def getCuts: Array[Array[Array[Double]]] = disc
+  def getPcaList: Array[PCAModel] = pcaList
+  def getModels: Array[PipelineModel] = models
+  def getLabelsInd: Array[String] = labelsInd
+
+  def predict(test: RDD[LabeledPoint]): Array[Double] ={
 
     val sqlContext= new org.apache.spark.sql.SQLContext(test.context)
     import sqlContext.implicits._
@@ -59,5 +66,41 @@ class PCARDModel(val nTrees: Int, val disc: Array[Array[Array[Double]]], val pca
     }
     val pos = totalPredictions.zipWithIndex.map{case (k,v) => k.indexOf(k.max).toDouble}
     pos.map(l => labelsInd(l.toInt).toDouble)
+  }
+
+  def predict(data: Vector): Double ={
+
+    val sqlContext= new org.apache.spark.sql.SQLContext(SparkContext.getOrCreate())
+    import sqlContext.implicits._
+
+    var totalPredictions = Array.fill(labelsInd.length)(0.0)
+
+    for(c <- 0 until nTrees){
+
+      //RD
+      val features = data.toArray
+      val newValues = for (i <- features.indices)
+        yield assignDiscreteValue(features(i), disc(c)(i).toSeq)
+      val featDisc = Vectors.dense(newValues.toArray)
+
+      //PCA
+
+      val pcaData = pcaList(c).transform(data)
+
+      //PCARD
+
+      val PCARD = Vectors.dense(featDisc.toArray ++ pcaData.toArray)
+
+      val test = SparkContext.getOrCreate().parallelize(Seq(LabeledPoint(0,PCARD))).toDF()
+
+      val predictions = models(c).transform(test).select("probability").collect()
+      var i = 0
+      predictions.foreach { case Row(prob: Vector) =>
+        totalPredictions = (totalPredictions, prob.toArray).zipped.map(_ + _)
+        i += 1
+      }
+    }
+    val pos = totalPredictions.indexOf(totalPredictions.max)
+    labelsInd(pos).toDouble
   }
 }

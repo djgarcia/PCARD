@@ -1,18 +1,17 @@
 package org.apache.spark.ml.classification
 
 import org.apache.spark.annotation.{Experimental, Since}
-import org.apache.spark.ml.tree.{PCARDEnsembleModel, TreeClassifierParams}
-import org.apache.spark.ml.util.{DefaultParamsReadable, MetadataUtils, Identifiable}
-import org.apache.spark.ml.{PipelineModel, PredictorParams}
+import org.apache.spark.ml.linalg.{DenseVector, SparseVector, Vector => ML}
 import org.apache.spark.ml.param._
+import org.apache.spark.ml.tree.{PCARDEnsembleModel, TreeClassifierParams}
+import org.apache.spark.ml.util.{DefaultParamsReadable, Identifiable, MetadataUtils}
+import org.apache.spark.ml.{PipelineModel, PredictorParams}
 import org.apache.spark.mllib.feature.PCAModel
-import org.apache.spark.mllib.tree.{PCARD => OldPCARD}
-import org.apache.spark.mllib.tree.{PCARDModel => OldPCARDModel}
+import org.apache.spark.mllib.linalg.{Vector, Vectors}
 import org.apache.spark.mllib.regression.LabeledPoint
+import org.apache.spark.mllib.tree.{PCARD => OldPCARD, PCARDModel => OldPCARDModel}
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.DataFrame
-import org.apache.spark.mllib.linalg.{DenseVector, SparseVector, Vectors, Vector}
-
+import org.apache.spark.sql.Dataset
 
 private[ml] trait PCARDParams extends PredictorParams {
 
@@ -29,8 +28,8 @@ private[ml] trait PCARDParams extends PredictorParams {
 
 @Since("1.5.0")
 @Experimental
-class PCARDClassifier @Since("1.5.0") (@Since("1.5.0") override val uid: String)
-  extends ProbabilisticClassifier[Vector, PCARDClassifier, PCARDClassificationModel]
+class PCARDClassifier @Since("1.5.0")(@Since("1.5.0") override val uid: String)
+  extends ProbabilisticClassifier[ML, PCARDClassifier, PCARDClassificationModel]
     with PCARDParams with TreeClassifierParams {
 
   @Since("1.5.0")
@@ -38,13 +37,15 @@ class PCARDClassifier @Since("1.5.0") (@Since("1.5.0") override val uid: String)
 
   @Since("1.5.0")
   def setTrees(value: Int): this.type = set(nTrees, value)
+
   setDefault(nTrees -> 10)
 
   @Since("1.5.0")
   def setCuts(value: Int): this.type = set(cuts, value)
+
   setDefault(cuts -> 5)
 
-  override protected def train(dataset: DataFrame): PCARDClassificationModel = {
+  override protected def train(dataset: Dataset[_]): PCARDClassificationModel = {
     val categoricalFeatures: Map[Int, Int] =
       MetadataUtils.getCategoricalFeatures(dataset.schema($(featuresCol)))
     val numClasses: Int = MetadataUtils.getNumClasses(dataset.schema($(labelCol))) match {
@@ -54,7 +55,7 @@ class PCARDClassifier @Since("1.5.0") (@Since("1.5.0") override val uid: String)
         " specified. See StringIndexer.")
     }
 
-    val oldDataset: RDD[LabeledPoint] = extractLabeledPoints(dataset)
+    val oldDataset: RDD[LabeledPoint] = extractLabeledPoints(dataset).map { x => LabeledPoint(x.label, Vectors.dense(x.features.toArray)) }
     val oldModel = OldPCARD.train(oldDataset, $(nTrees), $(cuts))
     PCARDClassificationModel.fromOld(oldModel, this)
     //oldModel.asInstanceOf[PCARDClassificationModel]
@@ -73,13 +74,13 @@ object PCARDClassifier extends DefaultParamsReadable[PCARDClassifier] {
 
 @Since("1.5.0")
 @Experimental
-class PCARDClassificationModel private[ml] (override val uid: String,
-                                            override val nTrees: Int,
-                                            override val disc: Array[Array[Array[Double]]],
-                                            override val pcaList: Array[PCAModel],
-                                            override val models: Array[PipelineModel],
-                                            override val labelsInd: Array[String])
-  extends ProbabilisticClassificationModel[Vector, PCARDClassificationModel]
+class PCARDClassificationModel private[ml](override val uid: String,
+                                           override val nTrees: Int,
+                                           override val disc: Array[Array[Array[Double]]],
+                                           override val pcaList: Array[PCAModel],
+                                           override val models: Array[PipelineModel],
+                                           override val labelsInd: Array[String])
+  extends ProbabilisticClassificationModel[ML, PCARDClassificationModel]
     with PCARDEnsembleModel with Serializable {
 
   @Since("1.5.0")
@@ -95,19 +96,19 @@ class PCARDClassificationModel private[ml] (override val uid: String,
                        labelsInd: Array[String]) =
     this(Identifiable.randomUID("pcardc"), nTrees, disc, pcaList, models, labelsInd)
 
-  override protected def predict(features: Vector): Double = {
+  override protected def predict(features: ML): Double = {
     val model = new OldPCARDModel(nTrees, disc, pcaList, models, labelsInd)
-    model.predict(features)
+    model.predict(Vectors.dense(features.toArray))
   }
 
-  override protected def predictRaw(features: Vector): Vector = {
+  override protected def predictRaw(features: ML): ML = {
     val model = new OldPCARDModel(nTrees, disc, pcaList, models, labelsInd)
     val pred = Array.fill(numClasses)(0.0)
-    pred(model.predict(features).toInt) = numFeatures
-    Vectors.dense(pred)
+    pred(model.predict(Vectors.dense(features.toArray)).toInt) = numFeatures
+    Vectors.dense(pred).asML
   }
 
-  override protected def raw2probabilityInPlace(rawPrediction: Vector): Vector = {
+  override protected def raw2probabilityInPlace(rawPrediction: ML): ML = {
     rawPrediction match {
       case dv: DenseVector =>
         ProbabilisticClassificationModel.normalizeToProbabilitiesInPlace(dv)
@@ -121,10 +122,10 @@ class PCARDClassificationModel private[ml] (override val uid: String,
   @Since("1.5.0")
   override def copy(extra: ParamMap): PCARDClassificationModel = {
     copyValues(new PCARDClassificationModel(uid, nTrees: Int,
-    disc: Array[Array[Array[Double]]],
-    pcaList: Array[PCAModel],
-    models: Array[PipelineModel],
-    labelsInd: Array[String]), extra)
+      disc: Array[Array[Array[Double]]],
+      pcaList: Array[PCAModel],
+      models: Array[PipelineModel],
+      labelsInd: Array[String]), extra)
   }
 
   @Since("1.5.0")
@@ -148,4 +149,3 @@ private[ml] object PCARDClassificationModel {
     new PCARDClassificationModel(uid, nTrees, cuts, pcaList, models, labelsInd)
   }
 }
-

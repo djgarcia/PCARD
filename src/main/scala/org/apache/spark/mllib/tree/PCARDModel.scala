@@ -4,9 +4,10 @@ import org.apache.spark.SparkContext
 import org.apache.spark.ml.PipelineModel
 import org.apache.spark.mllib.feature.PCAModel
 import org.apache.spark.mllib.linalg.{DenseMatrix, Vector, Vectors}
+import org.apache.spark.ml.linalg.{Vector => ML}
 import org.apache.spark.mllib.regression.LabeledPoint
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.Row
+import org.apache.spark.sql.{Row, SparkSession}
 
 class PCARDModel(val nTrees: Int, val disc: Array[Array[Array[Double]]], val pcaList: Array[PCAModel], val models: Array[PipelineModel], val labelsInd: Array[String]) extends Serializable {
 
@@ -61,12 +62,12 @@ class PCARDModel(val nTrees: Int, val disc: Array[Array[Array[Double]]], val pca
 
       //PCARD
 
-      val PCARD = pcaData.zip(featDisc).map(l => LabeledPoint(l._1.label, Vectors.dense(l._2 ++ l._1.features.toArray))).toDF()
+      val PCARD = pcaData.zip(featDisc).map(l => LabeledPoint(l._1.label, Vectors.dense(l._2 ++ l._1.features.toArray)).asML).toDF()
 
       val predictions = models(c).transform(PCARD).select("probability").collect()
       var i = 0
       predictions.foreach {
-        case Row(prob: Vector) =>
+        case Row(prob: ML) =>
           totalPredictions(i) = Array(totalPredictions(i), prob.toArray).transpose.map(_.sum)
           i += 1
       }
@@ -77,7 +78,7 @@ class PCARDModel(val nTrees: Int, val disc: Array[Array[Array[Double]]], val pca
 
   def predict(data: Vector): Double = {
 
-    val sqlContext = new org.apache.spark.sql.SQLContext(SparkContext.getOrCreate())
+    val sqlContext = SparkSession.builder().getOrCreate()
     import sqlContext.implicits._
 
     var totalPredictions = Array.fill(labelsInd.length)(0.0)
@@ -98,12 +99,12 @@ class PCARDModel(val nTrees: Int, val disc: Array[Array[Array[Double]]], val pca
 
       val PCARD = Vectors.dense(featDisc.toArray ++ pcaData.toArray)
 
-      val test = SparkContext.getOrCreate().parallelize(Seq(LabeledPoint(0, PCARD))).toDF()
+      val test = SparkContext.getOrCreate().parallelize(Seq(LabeledPoint(0, PCARD).asML)).toDF()
 
       val predictions = models(c).transform(test).select("probability").collect()
       var i = 0
       predictions.foreach {
-        case Row(prob: Vector) =>
+        case Row(prob: ML) =>
           totalPredictions = (totalPredictions, prob.toArray).zipped.map(_ + _)
           i += 1
       }

@@ -4,7 +4,7 @@ import org.apache.spark.ml.classification.DecisionTreeClassifier
 import org.apache.spark.ml.feature.StringIndexer
 import org.apache.spark.ml.{Pipeline, PipelineModel}
 import org.apache.spark.mllib.feature.{PCA, PCAModel}
-import org.apache.spark.mllib.linalg._
+import org.apache.spark.mllib.linalg.Vectors
 import org.apache.spark.mllib.regression.LabeledPoint
 import org.apache.spark.rdd._
 
@@ -81,7 +81,7 @@ class PCARD private(val data: RDD[LabeledPoint], val nTrees: Int, val cuts: Int)
       val pcaData = data.map(p => p.copy(features = pca.transform(p.features)))
 
       //PCARD
-      val PCARD = pcaData.zip(discData).map(l => LabeledPoint(l._1.label, Vectors.dense(l._2.features.toArray ++ l._1.features.toArray))).toDF()
+      val PCARD = pcaData.zip(discData).map(l => LabeledPoint(l._1.label, Vectors.dense(l._2.features.toArray ++ l._1.features.toArray)).asML).toDF()
 
       val labelIndexer = new StringIndexer()
         .setInputCol("label")

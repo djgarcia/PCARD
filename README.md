@@ -16,7 +16,40 @@ We have created an oversampling version of this dataset with 65 million instance
 * We outperform the original proposal and Random Forest implementation in MLlib for all datasets.
 * For epsilon dataset, we have outperformed the results of Random Forest by 5% less error with just 10 trees, compared to a Random Forest with up to 500 trees.
 
-## Example
+
+## Example (ml)
+
+```scala
+import org.apache.spark.ml.classification._
+
+val nTrees = 10
+val nBins = 5
+
+val labelIndexer = new StringIndexer()
+      .setInputCol("label")
+      .setOutputCol("indexedLabel")
+      .fit(trainingData)
+
+val pcard = new PCARDClassifier()
+      .setLabelCol("indexedLabel")
+      .setFeaturesCol("features")
+      .setTrees(nTrees)
+      .setCuts(nBins)
+
+val labelConverter = new IndexToString()
+      .setInputCol("prediction")
+      .setOutputCol("predictedLabel")
+      .setLabels(labelIndexer.labels)
+
+val pipeline = new Pipeline()
+      .setStages(Array(labelIndexer, pcard, labelConverter))
+
+val model = pipeline.fit(trainingData)
+
+val predictions = model.transform(testData)
+```
+
+## Example (MLlib)
 
 
 ```scala
@@ -38,4 +71,4 @@ val predicted = pcardModel.test(testData) // RDD[LabeledPoint]
 
 [1] A. Ahmad and G. Brown,
 "Random Projection Random Discretization Ensembles - Ensembles of Linear Multivariate Decision Trees",
-nowledge and Data Engineering, IEEE Transactions on, vol. 26, pp. 1225–1239, May 2014.
+Knowledge and Data Engineering, IEEE Transactions on, vol. 26, pp. 1225–1239, May 2014.

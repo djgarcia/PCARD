@@ -1,15 +1,16 @@
 package org.apache.spark.mllib.tree
 
 import org.apache.spark.ml.classification.DecisionTreeClassifier
+import org.apache.spark.ml.feature.StringIndexer
 import org.apache.spark.ml.{Pipeline, PipelineModel}
 import org.apache.spark.mllib.feature.{PCA, PCAModel}
-import org.apache.spark.rdd._
-import org.apache.spark.mllib.regression.LabeledPoint
 import org.apache.spark.mllib.linalg._
-import org.apache.spark.ml.feature.StringIndexer
+import org.apache.spark.mllib.regression.LabeledPoint
+import org.apache.spark.rdd._
+
 import scala.util.Random
 
-class PCARD private (val data: RDD[LabeledPoint], val nTrees: Int, val cuts: Int) extends Serializable{
+class PCARD private(val data: RDD[LabeledPoint], val nTrees: Int, val cuts: Int) extends Serializable {
 
   private val disc: Array[Array[Array[Double]]] = new Array[Array[Array[Double]]](nTrees)
   private val pcaList: Array[PCAModel] = new Array[PCAModel](nTrees)
@@ -17,47 +18,50 @@ class PCARD private (val data: RDD[LabeledPoint], val nTrees: Int, val cuts: Int
   private var labelsInd: Array[String] = new Array[String](1)
 
   private def assignDiscreteValue(value: Double, thresholds: Seq[Double]) = {
-    if(thresholds.isEmpty){
+    if (thresholds.isEmpty) {
       value
-    }else{
-      val ret = thresholds.indexWhere{value <= _}
-      if(ret == -1){
+    } else {
+      val ret = thresholds.indexWhere {
+        value <= _
+      }
+      if (ret == -1) {
         thresholds.size.toDouble
-      }else{
+      } else {
         ret.toDouble
       }
     }
   }
 
-  def runTrain(): PCARDModel ={
+  def runTrain(): PCARDModel = {
 
-    val sqlContext= new org.apache.spark.sql.SQLContext(data.context)
+    val sqlContext = new org.apache.spark.sql.SQLContext(data.context)
     import sqlContext.implicits._
 
-    for(c <- 0 until nTrees){
+    for (c <- 0 until nTrees) {
 
       //RD
-      val cortes = Seq.fill(cuts-1)(Random.nextInt(data.count.toInt))
-      val indexKey = data.zipWithIndex.map{case (k,v) => (v,k)}
-      val temp  = new Array[Array[Double]](cortes.size)
+      val cortes = Seq.fill(cuts - 1)(Random.nextInt(data.count.toInt))
+      val indexKey = data.zipWithIndex.map { case (k, v) => (v, k) }
+      val temp = new Array[Array[Double]](cortes.size)
 
-      for(i <- cortes.indices){
+      for (i <- cortes.indices) {
         temp(i) = indexKey.lookup(cortes(i)).head.features.toArray
       }
 
-      val trans = temp.transpose.zipWithIndex.map{case(l,i) =>
-        val feat = l.sorted.distinct
-        if (feat.length == 1){
-          val col = data.map(l=>l.features.toArray.slice(i,i+1)).collect.flatten.distinct
-          (util.Random.shuffle(col.toList) take cuts-1).sorted.toArray
-        }else{
-          feat
-        }
+      val trans = temp.transpose.zipWithIndex.map {
+        case (l, i) =>
+          val feat = l.sorted.distinct
+          if (feat.length == 1) {
+            val col = data.map(l => l.features.toArray.slice(i, i + 1)).collect.flatten.distinct
+            (Random.shuffle(col.toList) take cuts - 1).sorted.toArray
+          } else {
+            feat
+          }
       }
 
       disc(c) = trans
 
-      val discData = data.map{ l =>
+      val discData = data.map { l =>
         val features = l.features.toArray
         val newValues = for (i <- features.indices)
           yield assignDiscreteValue(features(i), trans(i).toSeq)
@@ -69,7 +73,7 @@ class PCARD private (val data: RDD[LabeledPoint], val nTrees: Int, val cuts: Int
       val tam = data.first().features.size
 
       val rnd = new scala.util.Random
-      val range = 1 to tam-1
+      val range = 1 to tam - 1
       val size = range(rnd.nextInt(range.length))
 
       val pca = new PCA(size).fit(data.map(_.features))
@@ -89,6 +93,7 @@ class PCARD private (val data: RDD[LabeledPoint], val nTrees: Int, val cuts: Int
       val dt = new DecisionTreeClassifier()
         .setLabelCol("indexedLabel")
         .setFeaturesCol("features")
+      //.setMaxMemoryInMB(5000)
 
       val pipeline = new Pipeline()
         .setStages(Array(labelIndexer, dt))
@@ -99,8 +104,8 @@ class PCARD private (val data: RDD[LabeledPoint], val nTrees: Int, val cuts: Int
   }
 }
 
-object PCARD{
-  def train(input: RDD[LabeledPoint], nTrees: Int, cuts: Int) ={
+object PCARD {
+  def train(input: RDD[LabeledPoint], nTrees: Int, cuts: Int): PCARDModel = {
     new PCARD(input, nTrees, cuts).runTrain()
   }
 }

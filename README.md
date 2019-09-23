@@ -64,7 +64,7 @@ val pcardModel = PCARD.train(trainingData, // RDD[LabeledPoint]
                             nTrees, // size of the ensemble
                             nBins) // number of thresholds by feature
 
-val predicted = pcardModel.test(testData) // RDD[LabeledPoint]
+val predicted = pcardModel.predict(testData) // RDD[LabeledPoint]
 ```
 
 ## References
